@@ -16,12 +16,22 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { AspectRatio, Slide } from "./lib/types";
+import { AspectRatio, GlobalSettings, DEFAULT_GLOBAL_SETTINGS, Slide } from "./lib/types";
 import { exportVideo, RenderOpts, supportsMediaRecorder } from "./lib/renderer";
 import SlideCard from "./components/SlideCard";
 import PreviewModal from "./components/PreviewModal";
 
 const LS_KEY = "svm-aspect-ratio";
+const LS_GS_KEY = "svm-global-settings";
+
+function loadGlobalSettings(): GlobalSettings {
+  if (typeof window === "undefined") return DEFAULT_GLOBAL_SETTINGS;
+  try {
+    const raw = localStorage.getItem(LS_GS_KEY);
+    if (raw) return { ...DEFAULT_GLOBAL_SETTINGS, ...JSON.parse(raw) };
+  } catch {}
+  return DEFAULT_GLOBAL_SETTINGS;
+}
 
 function genId() {
   return Math.random().toString(36).slice(2, 10);
@@ -45,6 +55,7 @@ function loadAspectRatio(): AspectRatio {
 export default function Home() {
   const [slides, setSlides] = useState<Slide[]>([]);
   const [aspectRatio, setAspectRatioState] = useState<AspectRatio>("9:16");
+  const [globalSettings, setGlobalSettingsState] = useState<GlobalSettings>(DEFAULT_GLOBAL_SETTINGS);
   const [previewing, setPreviewing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -54,6 +65,7 @@ export default function Home() {
   // Restore from localStorage after hydration
   useEffect(() => {
     setAspectRatioState(loadAspectRatio());
+    setGlobalSettingsState(loadGlobalSettings());
   }, []);
 
   function setAspectRatio(ar: AspectRatio) {
@@ -61,9 +73,17 @@ export default function Home() {
     localStorage.setItem(LS_KEY, ar);
   }
 
+  function setGlobalSettings(patch: Partial<GlobalSettings>) {
+    setGlobalSettingsState((prev) => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem(LS_GS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
   const renderOpts = useMemo<RenderOpts>(
-    () => ({ aspectRatio, reelMode: false }),
-    [aspectRatio]
+    () => ({ aspectRatio, reelMode: false, globalSettings }),
+    [aspectRatio, globalSettings]
   );
 
   const sensors = useSensors(
@@ -172,6 +192,40 @@ export default function Home() {
               {ar === "9:16" ? "縦 9:16（リール）" : "横 16:9"}
             </button>
           ))}
+        </div>
+
+        {/* Global transition settings */}
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#888] whitespace-nowrap">トランジション</span>
+            <select
+              value={globalSettings.transition}
+              onChange={(e) => setGlobalSettings({ transition: e.target.value as GlobalSettings["transition"] })}
+              className="flex-1 bg-[#1a1a1a] border border-[#333] text-white text-xs rounded-lg h-9 px-2 focus:outline-none focus:border-[#ff7a1a]"
+            >
+              <option value="none">なし（カット）</option>
+              <option value="fade">フェード</option>
+              <option value="slide-left">←スライド</option>
+              <option value="zoom">ズーム</option>
+            </select>
+          </div>
+          {globalSettings.transition !== "none" && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#888] whitespace-nowrap">時間</span>
+              <input
+                type="range"
+                min={0.2}
+                max={1.0}
+                step={0.1}
+                value={globalSettings.transitionDuration}
+                onChange={(e) => setGlobalSettings({ transitionDuration: Number(e.target.value) })}
+                className="flex-1 accent-[#ff7a1a] h-2"
+              />
+              <span className="text-[#ff7a1a] text-xs font-bold w-12 text-right tabular-nums">
+                {globalSettings.transitionDuration.toFixed(1)}秒
+              </span>
+            </div>
+          )}
         </div>
       </header>
 

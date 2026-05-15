@@ -1,7 +1,14 @@
-import { AspectRatio, OverlayPosition, OverlaySize, Slide } from "./types";
+import {
+  AspectRatio,
+  DEFAULT_GLOBAL_SETTINGS,
+  GlobalSettings,
+  OverlayPosition,
+  OverlaySize,
+  Slide,
+  TransitionType,
+} from "./types";
 
 const FPS = 30;
-const TRANS_DUR = 0.4;
 
 // ─── dimension helpers ────────────────────────────────────────────────────
 
@@ -9,7 +16,6 @@ export function getDims(ar: AspectRatio): { W: number; H: number } {
   return ar === "9:16" ? { W: 720, H: 1280 } : { W: 1280, H: 720 };
 }
 
-// Proportional sizing unit: shorter edge (720 for both ratios)
 function unit(W: number, H: number) {
   return Math.min(W, H);
 }
@@ -17,6 +23,7 @@ function unit(W: number, H: number) {
 export interface RenderOpts {
   aspectRatio?: AspectRatio;
   reelMode?: boolean;
+  globalSettings?: GlobalSettings;
 }
 
 // ─── public helpers ───────────────────────────────────────────────────────
@@ -39,6 +46,10 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+function resolveTransition(slide: Slide, gs: GlobalSettings): TransitionType {
+  return slide.transition === "global" ? gs.transition : slide.transition;
+}
+
 // ─── drawing primitives ───────────────────────────────────────────────────
 
 function drawBg(
@@ -50,14 +61,61 @@ function drawBg(
 ) {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, W, H);
-  // contain = fit fully visible (may have black bars)
-  // cover  = fill frame (may crop)
   const scale = contain
     ? Math.min(W / img.naturalWidth, H / img.naturalHeight)
     : Math.max(W / img.naturalWidth, H / img.naturalHeight);
   const dw = img.naturalWidth * scale;
   const dh = img.naturalHeight * scale;
   ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+}
+
+// Draws only the background transition effect (no overlays)
+function drawTransitionBg(
+  ctx: CanvasRenderingContext2D,
+  curImg: HTMLImageElement,
+  nextImg: HTMLImageElement,
+  tp: number, // 0→1 progress
+  W: number,
+  H: number,
+  contain: boolean,
+  transType: TransitionType
+) {
+  switch (transType) {
+    case "fade": {
+      // Next slide fully underneath, current fades out on top
+      drawBg(ctx, nextImg, W, H, contain);
+      ctx.globalAlpha = 1 - tp;
+      drawBg(ctx, curImg, W, H, contain);
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case "slide-left": {
+      // Current slides out left, next enters from right
+      ctx.save();
+      ctx.translate(-W * tp, 0);
+      drawBg(ctx, curImg, W, H, contain);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(W * (1 - tp), 0);
+      drawBg(ctx, nextImg, W, H, contain);
+      ctx.restore();
+      break;
+    }
+    case "zoom": {
+      // Current stays, next zooms in from 90%→100% while fading in
+      drawBg(ctx, curImg, W, H, contain);
+      ctx.save();
+      ctx.globalAlpha = tp;
+      const zoom = 0.9 + 0.1 * tp;
+      ctx.transform(zoom, 0, 0, zoom, (W * (1 - zoom)) / 2, (H * (1 - zoom)) / 2);
+      drawBg(ctx, nextImg, W, H, contain);
+      ctx.restore();
+      break;
+    }
+    default: // "none"
+      drawBg(ctx, curImg, W, H, contain);
+      break;
+  }
 }
 
 function drawTapRing(
@@ -72,10 +130,9 @@ function drawTapRing(
   const py = slide.tapPoint.y * H;
   const t = elapsed - 0.1;
   if (t < 0 || t > 1.0) return;
-  const p = t;
-  const s = p < 0.6 ? 0.5 + (p / 0.6) * 1.3 : 1.8 - ((p - 0.6) / 0.4) * 1.3;
-  const a = p < 0.6 ? 1 : 1 - ((p - 0.6) / 0.4) * 0.4;
-  const r = unit(W, H) * 0.056; // ~40px on 720-unit canvas
+  const s = t < 0.6 ? 0.5 + (t / 0.6) * 1.3 : 1.8 - ((t - 0.6) / 0.4) * 1.3;
+  const a = t < 0.6 ? 1 : 1 - ((t - 0.6) / 0.4) * 0.4;
+  const r = unit(W, H) * 0.056;
   ctx.beginPath();
   ctx.arc(px, py, r * s, 0, Math.PI * 2);
   ctx.strokeStyle = `rgba(255,220,0,${a})`;
@@ -94,8 +151,8 @@ function drawPopup(
   const px = slide.tapPoint.x * W;
   const py = slide.tapPoint.y * H;
   const u = unit(W, H);
-  const fs = Math.round(u * 0.058); // ~42px
-  const pad = Math.round(u * 0.022); // ~16px
+  const fs = Math.round(u * 0.058);
+  const pad = Math.round(u * 0.022);
   ctx.font = `bold ${fs}px sans-serif`;
   const tw = ctx.measureText(slide.popupText).width;
   const th = fs + pad;
@@ -111,8 +168,6 @@ function drawPopup(
   ctx.fillStyle = "#000";
   ctx.fillText(slide.popupText, bx + pad, by + fs + 2);
 }
-
-// ─── overlay text ─────────────────────────────────────────────────────────
 
 const OVERLAY_FS: Record<OverlaySize, number> = {
   small: 0.05,
@@ -132,7 +187,6 @@ function wrapText(
       result.push(para);
       continue;
     }
-    // character-by-character wrap (works for CJK and Latin)
     let line = "";
     for (const ch of para) {
       const test = line + ch;
@@ -157,9 +211,7 @@ function drawOverlay(
 ) {
   if (!slide.overlayText) return;
 
-  const ANIM = 0.3;
-  const progress = Math.min(elapsed / ANIM, 1); // 0→1 over 0.3 s
-
+  const progress = Math.min(elapsed / 0.3, 1);
   const u = unit(W, H);
   const fs = Math.round(u * OVERLAY_FS[slide.overlaySize]);
   const lineH = Math.round(fs * 1.35);
@@ -178,41 +230,30 @@ function drawOverlay(
   );
   const boxH = lines.length * lineH + padY * 2;
 
-  // vertical anchor
   const pos: OverlayPosition = slide.overlayPosition;
   let boxY: number;
-  const slideOffset = Math.round(H * 0.016); // ~20px on 1280H
+  const slideOff = Math.round(H * 0.016);
   if (pos === "top") {
     boxY = Math.round(H * 0.06);
   } else if (pos === "bottom") {
-    // stay above caption bar (estimate ~10% of H)
     boxY = Math.round(H * 0.78) - boxH;
   } else {
     boxY = Math.round(H / 2 - boxH / 2);
   }
-
   const boxX = Math.round((W - boxW) / 2);
-
-  // animation: fade + slide
   const dy =
-    pos === "bottom" ? slideOffset * (1 - progress) :
-    pos === "top"    ? -slideOffset * (1 - progress) : 0;
+    pos === "bottom" ? slideOff * (1 - progress) :
+    pos === "top"    ? -slideOff * (1 - progress) : 0;
 
   ctx.save();
   ctx.globalAlpha = progress;
   ctx.translate(0, dy);
-
-  // semi-transparent background
   ctx.fillStyle = "rgba(0,0,0,0.7)";
   roundRect(ctx, boxX, boxY, boxW, boxH, Math.round(u * 0.012));
   ctx.fill();
-
-  // orange border
   ctx.strokeStyle = "#ff7a1a";
   ctx.lineWidth = 2;
   ctx.stroke();
-
-  // white text
   ctx.fillStyle = "#fff";
   ctx.font = `bold ${fs}px sans-serif`;
   ctx.textAlign = "center";
@@ -220,7 +261,6 @@ function drawOverlay(
     ctx.fillText(line, boxX + boxW / 2, boxY + padY + fs + i * lineH);
   });
   ctx.textAlign = "left";
-
   ctx.restore();
 }
 
@@ -232,7 +272,6 @@ function drawNormalCaption(
 ) {
   if (!slide.caption) return;
   const u = unit(W, H);
-  // 9:16: slightly larger captions as specced
   const fs = Math.round(u * (H > W ? 0.062 : 0.048));
   const capH = Math.round(fs * 2.4);
   ctx.fillStyle = "rgba(0,0,0,0.75)";
@@ -251,7 +290,7 @@ function drawReelCaption(
   H: number
 ) {
   if (!slide.caption) return;
-  const fs = Math.round(unit(W, H) * 0.086); // ~62px
+  const fs = Math.round(unit(W, H) * 0.086);
   ctx.font = `bold ${fs}px sans-serif`;
   ctx.textAlign = "center";
   ctx.shadowColor = "rgba(0,0,0,0.85)";
@@ -318,104 +357,65 @@ function roundRect(
   ctx.closePath();
 }
 
-// ─── composite draw ───────────────────────────────────────────────────────
-
-function drawNormalSlide(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  slide: Slide,
-  elapsed: number,
-  W: number,
-  H: number,
-  contain: boolean
-) {
-  drawBg(ctx, img, W, H, contain);
-  drawTapRing(ctx, slide, elapsed, W, H);
-  drawPopup(ctx, slide, elapsed, W, H);
-  drawOverlay(ctx, slide, elapsed, W, H);
-  drawNormalCaption(ctx, slide, W, H);
-}
-
-function drawReelFrame(
-  ctx: CanvasRenderingContext2D,
-  images: HTMLImageElement[],
-  slides: Slide[],
-  globalTime: number,
-  W: number,
-  H: number,
-  contain: boolean
-) {
-  let acc = 0;
-  let idx = slides.length - 1;
-  let elapsed = globalTime;
-  for (let i = 0; i < slides.length; i++) {
-    if (globalTime < acc + slides[i].duration) {
-      idx = i;
-      elapsed = globalTime - acc;
-      break;
-    }
-    acc += slides[i].duration;
-  }
-
-  const slide = slides[idx];
-  const nextSlide = slides[idx + 1];
-  const nextImg = images[idx + 1];
-  const transStart = slide.duration - TRANS_DUR;
-  const isTransitioning =
-    nextSlide && slide.transition !== "none" && elapsed >= transStart;
-
-  if (!isTransitioning) {
-    drawBg(ctx, images[idx], W, H, contain);
-    drawTapRing(ctx, slide, elapsed, W, H);
-    drawPopup(ctx, slide, elapsed, W, H);
-    drawOverlay(ctx, slide, elapsed, W, H);
-    drawReelCaption(ctx, slide, W, H);
-  } else {
-    const tp = (elapsed - transStart) / TRANS_DUR;
-    if (slide.transition === "fade") {
-      drawBg(ctx, nextImg, W, H, contain);
-      ctx.globalAlpha = 1 - tp;
-      drawBg(ctx, images[idx], W, H, contain);
-      ctx.globalAlpha = 1;
-      ctx.globalAlpha = 1 - tp;
-      drawTapRing(ctx, slide, elapsed, W, H);
-      drawPopup(ctx, slide, elapsed, W, H);
-      drawOverlay(ctx, slide, elapsed, W, H);
-      drawReelCaption(ctx, slide, W, H);
-      ctx.globalAlpha = tp;
-      drawReelCaption(ctx, nextSlide, W, H);
-      ctx.globalAlpha = 1;
-    } else if (slide.transition === "slide-up") {
-      drawBg(ctx, images[idx], W, H, contain);
-      drawTapRing(ctx, slide, elapsed, W, H);
-      drawPopup(ctx, slide, elapsed, W, H);
-      drawOverlay(ctx, slide, elapsed, W, H);
-      drawReelCaption(ctx, slide, W, H);
-      ctx.save();
-      ctx.translate(0, H * (1 - tp));
-      drawBg(ctx, nextImg, W, H, contain);
-      drawReelCaption(ctx, nextSlide, W, H);
-      ctx.restore();
-    }
-  }
-
-  drawStoryBar(ctx, slides, globalTime, W, H);
-}
-
-// ─── time helpers ─────────────────────────────────────────────────────────
+// ─── time helper ──────────────────────────────────────────────────────────
 
 function resolveSlide(
   slides: Slide[],
-  globalTime: number
+  gt: number
 ): { idx: number; elapsed: number } {
   let acc = 0;
   for (let i = 0; i < slides.length; i++) {
-    if (globalTime < acc + slides[i].duration) {
-      return { idx: i, elapsed: globalTime - acc };
+    if (gt < acc + slides[i].duration) {
+      return { idx: i, elapsed: gt - acc };
     }
     acc += slides[i].duration;
   }
   return { idx: slides.length - 1, elapsed: slides[slides.length - 1].duration };
+}
+
+// ─── unified frame renderer ───────────────────────────────────────────────
+
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  images: HTMLImageElement[],
+  slides: Slide[],
+  gt: number,       // global time (already looped / clamped by caller)
+  W: number,
+  H: number,
+  contain: boolean,
+  gs: GlobalSettings,
+  reelMode: boolean
+): number {
+  const { idx, elapsed } = resolveSlide(slides, gt);
+  const slide = slides[idx];
+  const hasNext = idx + 1 < slides.length;
+  const TRANS_DUR = gs.transitionDuration;
+  const transType = resolveTransition(slide, gs);
+  const isTransitioning =
+    hasNext && transType !== "none" && elapsed >= slide.duration - TRANS_DUR;
+
+  if (!isTransitioning) {
+    drawBg(ctx, images[idx], W, H, contain);
+  } else {
+    const tp = Math.min((elapsed - (slide.duration - TRANS_DUR)) / TRANS_DUR, 1);
+    drawTransitionBg(ctx, images[idx], images[idx + 1], tp, W, H, contain, transType);
+  }
+
+  // Overlays always drawn at full opacity on top of the background transition.
+  // Tap ring: elapsed starts from 0 on slide N+1 only after transition ends,
+  // so it naturally begins after the transition completes.
+  drawTapRing(ctx, slide, elapsed, W, H);
+  drawPopup(ctx, slide, elapsed, W, H);
+  drawOverlay(ctx, slide, elapsed, W, H);
+
+  if (reelMode) {
+    drawReelCaption(ctx, slide, W, H);
+    drawStoryBar(ctx, slides, gt, W, H);
+  } else {
+    drawNormalCaption(ctx, slide, W, H);
+  }
+
+  return idx;
 }
 
 // ─── public preview API ───────────────────────────────────────────────────
@@ -430,6 +430,7 @@ export async function renderPreview(
   const { W, H } = getDims(ar);
   const contain = ar === "9:16";
   const reelMode = opts.reelMode ?? false;
+  const gs = opts.globalSettings ?? DEFAULT_GLOBAL_SETTINGS;
 
   canvas.width = W;
   canvas.height = H;
@@ -445,13 +446,8 @@ export async function renderPreview(
     if (stopped) return;
     if (startTime === null) startTime = now;
     const gt = ((now - startTime) / 1000) % totalDuration;
-    const { idx, elapsed } = resolveSlide(slides, gt);
+    const idx = drawFrame(ctx, images, slides, gt, W, H, contain, gs, reelMode);
     onSlideChange?.(idx);
-    if (reelMode) {
-      drawReelFrame(ctx, images, slides, gt, W, H, contain);
-    } else {
-      drawNormalSlide(ctx, images[idx], slides[idx], elapsed, W, H, contain);
-    }
     frameId = requestAnimationFrame(tick);
   }
 
@@ -470,6 +466,7 @@ export async function exportVideo(
   const { W, H } = getDims(ar);
   const contain = ar === "9:16";
   const reelMode = opts.reelMode ?? false;
+  const gs = opts.globalSettings ?? DEFAULT_GLOBAL_SETTINGS;
 
   const canvas = document.createElement("canvas");
   canvas.width = W;
@@ -495,12 +492,7 @@ export async function exportVideo(
 
     function nextFrame() {
       const gt = Math.min(frame / FPS, totalDuration - 1 / FPS);
-      const { idx, elapsed } = resolveSlide(slides, gt);
-      if (reelMode) {
-        drawReelFrame(ctx, images, slides, gt, W, H, contain);
-      } else {
-        drawNormalSlide(ctx, images[idx], slides[idx], elapsed, W, H, contain);
-      }
+      drawFrame(ctx, images, slides, gt, W, H, contain, gs, reelMode);
       onProgress?.((frame / totalFrames) * 100);
       frame++;
       if (frame >= totalFrames) {

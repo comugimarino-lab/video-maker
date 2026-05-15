@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AspectRatio, OverlayPosition, OverlaySize, Slide } from "../lib/types";
+import { AspectRatio, OverlayPosition, OverlaySize, Slide, SlideTransitionOverride } from "../lib/types";
 
 interface Props {
   slide: Slide;
@@ -133,6 +133,22 @@ export default function SlideCard({ slide, index, aspectRatio, onChange, onDelet
         >
           全画面自動配置
         </button>
+      </div>
+
+      {/* Per-slide transition override */}
+      <div className="flex items-center gap-2 mx-4 mt-3">
+        <span className="text-xs text-[#888] whitespace-nowrap">このスライドのトランジション</span>
+        <select
+          value={slide.transition}
+          onChange={(e) => onChange(slide.id, { transition: e.target.value as SlideTransitionOverride })}
+          className="flex-1 bg-[#1e1e1e] border border-[#333] text-white text-xs rounded-xl h-10 px-2 focus:outline-none focus:border-[#ff7a1a]"
+        >
+          <option value="global">全体設定に合わせる</option>
+          <option value="none">なし（カット）</option>
+          <option value="fade">フェード</option>
+          <option value="slide-left">←スライド</option>
+          <option value="zoom">ズーム</option>
+        </select>
       </div>
 
       {/* Overlay text */}
