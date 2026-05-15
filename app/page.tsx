@@ -17,7 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { Slide } from "./lib/types";
-import { exportVideo } from "./lib/renderer";
+import { exportVideo, supportsMediaRecorder } from "./lib/renderer";
 import SlideCard from "./components/SlideCard";
 import PreviewModal from "./components/PreviewModal";
 
@@ -39,6 +39,7 @@ export default function Home() {
   const [previewing, setPreviewing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportLabel, setExportLabel] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const sensors = useSensors(
@@ -84,17 +85,37 @@ export default function Home() {
     if (slides.length === 0) return;
     setExporting(true);
     setExportProgress(0);
+    setExportLabel("");
+
     try {
-      const blob = await exportVideo(slides, setExportProgress);
+      let blob: Blob;
+      let filename: string;
+
+      if (supportsMediaRecorder()) {
+        // Chrome / Android Safari – WebM via MediaRecorder
+        setExportLabel("WebM を書き出し中…");
+        blob = await exportVideo(slides, (pct) => setExportProgress(pct));
+        filename = "output.webm";
+      } else {
+        // iOS Safari fallback – MP4 via ffmpeg.wasm
+        const { exportVideoFfmpeg } = await import("./lib/ffmpeg-export");
+        blob = await exportVideoFfmpeg(slides, (pct, label) => {
+          setExportProgress(pct);
+          setExportLabel(label);
+        });
+        filename = "output.mp4";
+      }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "output.webm";
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
       setExporting(false);
       setExportProgress(0);
+      setExportLabel("");
     }
   }
 
@@ -104,7 +125,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-[#0a0a0a] max-w-lg mx-auto">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-b border-[#222] px-4 py-4">
-        <h1 className="text-[#f97316] font-bold text-xl leading-tight">
+        <h1 className="text-[#ff7a1a] font-bold text-xl leading-tight">
           📱 スクショ動画メーカー
         </h1>
         <p className="text-[#666] text-xs mt-0.5">
@@ -112,10 +133,10 @@ export default function Home() {
         </p>
       </header>
 
-      <main className="flex-1 px-4 pb-36 pt-4">
+      <main className="flex-1 px-4 pb-40 pt-4">
         {/* Upload zone */}
         <div
-          className="border-2 border-dashed border-[#f97316]/50 rounded-2xl p-8 text-center mb-6 active:bg-[#f97316]/5 transition-colors"
+          className="border-2 border-dashed border-[#ff7a1a]/50 rounded-2xl p-8 text-center mb-6 active:bg-[#ff7a1a]/5 transition-colors cursor-pointer"
           onClick={() => fileInputRef.current?.click()}
         >
           <div className="text-5xl mb-3">📸</div>
@@ -135,7 +156,7 @@ export default function Home() {
           />
         </div>
 
-        {/* Slide count info */}
+        {/* Slide count */}
         {slides.length > 0 && (
           <div className="flex items-center justify-between mb-4 px-1">
             <span className="text-[#888] text-sm">
@@ -143,7 +164,7 @@ export default function Home() {
             </span>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="text-[#f97316] text-sm font-semibold"
+              className="text-[#ff7a1a] text-sm font-semibold min-h-[44px] px-2"
             >
               + さらに追加
             </button>
@@ -183,32 +204,39 @@ export default function Home() {
 
       {/* Bottom action bar */}
       {slides.length > 0 && (
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-[#0a0a0a]/95 backdrop-blur border-t border-[#222] px-4 py-4 flex gap-3 z-40">
-          <button
-            onClick={() => setPreviewing(true)}
-            className="flex-1 bg-[#1a1a1a] border border-[#f97316]/60 text-[#f97316] font-bold py-4 rounded-2xl text-base active:opacity-70 transition-opacity"
-          >
-            ▶ プレビュー
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="flex-1 bg-[#f97316] text-black font-bold py-4 rounded-2xl text-base disabled:opacity-50 active:opacity-80 transition-opacity relative overflow-hidden"
-          >
-            {exporting ? (
-              <span>
-                書き出し中… {Math.round(exportProgress)}%
-              </span>
-            ) : (
-              "⬇ 動画を書き出す"
-            )}
-            {exporting && (
-              <div
-                className="absolute bottom-0 left-0 h-1 bg-black/30 transition-all"
-                style={{ width: `${exportProgress}%` }}
-              />
-            )}
-          </button>
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-[#0a0a0a]/95 backdrop-blur border-t border-[#222] px-4 py-4 z-40">
+          {/* Progress bar */}
+          {exporting && (
+            <div className="mb-3">
+              <div className="flex justify-between text-xs text-[#888] mb-1.5">
+                <span>{exportLabel || "書き出し中…"}</span>
+                <span className="text-[#ff7a1a] font-bold">{Math.round(exportProgress)}%</span>
+              </div>
+              <div className="h-1.5 bg-[#222] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#ff7a1a] rounded-full transition-all duration-300"
+                  style={{ width: `${exportProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setPreviewing(true)}
+              disabled={exporting}
+              className="flex-1 bg-[#1a1a1a] border border-[#ff7a1a]/60 text-[#ff7a1a] font-bold h-14 rounded-2xl text-base active:opacity-70 transition-opacity disabled:opacity-40"
+            >
+              ▶ プレビュー
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="flex-1 bg-[#ff7a1a] text-black font-bold h-14 rounded-2xl text-base disabled:opacity-50 active:opacity-80 transition-opacity"
+            >
+              {exporting ? "書き出し中…" : "⬇ 動画を書き出す"}
+            </button>
+          </div>
         </div>
       )}
 

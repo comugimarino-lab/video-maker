@@ -4,6 +4,15 @@ const VIDEO_W = 1080;
 const VIDEO_H = 1920;
 const FPS = 30;
 
+export function supportsMediaRecorder(): boolean {
+  if (typeof MediaRecorder === "undefined") return false;
+  return (
+    MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ||
+    MediaRecorder.isTypeSupported("video/webm") ||
+    MediaRecorder.isTypeSupported("video/mp4")
+  );
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();

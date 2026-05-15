@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📱 スクショ動画メーカー
 
-## Getting Started
+スクリーンショットから解説動画（縦型・9:16）をスマホ完結で作れる Web アプリです。
 
-First, run the development server:
+## 特徴
+
+- **クライアント完結** — 画像はサーバーに送信されません。すべてブラウザ内で処理します
+- **Chrome / Android Safari** → `canvas.captureStream()` + `MediaRecorder` で WebM を生成
+- **iOS Safari** → `ffmpeg.wasm` を使って MP4 (H.264) を生成（初回のみ約 31MB の WASM をロード）
+- ドラッグ&ドロップでスライドの並び替えが可能
+
+## 使い方
+
+### 1. 画像を追加
+
+「📸 画像を追加」エリアをタップして、スクリーンショットを1枚以上選択します。複数まとめて選択できます。
+
+### 2. 各スライドを編集
+
+追加した画像はカード形式で表示されます。各カードで以下を設定できます。
+
+| 機能 | 説明 |
+|------|------|
+| サムネイルをタップ | タップした座標をタップ位置として保存。黄色いリングが3回アニメします |
+| 中央をタップ位置に | サムネイル中央を自動でタップ位置に設定 |
+| 全画面自動配置 | タップ位置をリセット（リング・ポップアップなし） |
+| テロップ | 画面下部に白文字で字幕を表示 |
+| ポップアップ文字 | タップ位置の近くに黄色バッジでテキストを表示 |
+| 表示秒数 | 1〜10秒の範囲で設定（デフォルト 3秒） |
+| ⠿ ドラッグ | カードを長押し→ドラッグで順序を変更 |
+
+### 3. プレビュー再生
+
+「▶ プレビュー」ボタンをタップすると、Canvas 上で全スライドをループ再生します。
+画面右上に「現在のスライド / 総数」が表示されます。
+
+### 4. 動画を書き出す
+
+「⬇ 動画を書き出す」ボタンをタップします。
+
+- **Chrome / Android Safari**: `output.webm` をダウンロード
+- **iOS Safari**: `ffmpeg.wasm` を使って `output.mp4` をダウンロード
+  （初回のみ数十秒かかります。プログレスバーで進捗を確認できます）
+
+## 開発環境のセットアップ
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ブラウザで `http://localhost:3000` を開きます。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> **Note:** ffmpeg.wasm は SharedArrayBuffer を使用するため、`Cross-Origin-Opener-Policy: same-origin` および `Cross-Origin-Embedder-Policy: require-corp` ヘッダーが必要です。`next.config.ts` で設定済みです。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ビルド
 
-## Learn More
+```bash
+npm run build
+npm start
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 技術スタック
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [Next.js](https://nextjs.org) 16 (App Router) + TypeScript
+- [Tailwind CSS](https://tailwindcss.com) v4
+- [@dnd-kit](https://dndkit.com) — ドラッグ&ドロップ
+- [ffmpeg.wasm](https://ffmpegwasm.netlify.app) 0.12 — iOS Safari 向け MP4 書き出し
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## ブラウザ対応
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| ブラウザ | 動作 | 出力形式 |
+|---------|------|---------|
+| Chrome (PC / Android) | ✅ | WebM |
+| Android Chrome / Samsung Internet | ✅ | WebM |
+| iOS Safari 15.2+ | ✅ (ffmpeg.wasm) | MP4 |
+| iOS Safari 15.1以下 | ⚠️ 未検証 | — |

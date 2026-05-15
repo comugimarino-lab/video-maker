@@ -19,24 +19,29 @@ export default function PreviewModal({ slides, onClose }: Props) {
     renderPreview(canvasRef.current, slides, setCurrentSlide).then((stop) => {
       stopRef.current = stop;
     });
-    return () => {
-      stopRef.current?.();
-    };
+    return () => { stopRef.current?.(); };
   }, [slides]);
 
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#333]">
-        <span className="text-[#f97316] font-bold">
-          プレビュー #{currentSlide + 1} / {slides.length}
-        </span>
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-[#0a0a0a]/90">
         <button
           onClick={onClose}
-          className="text-white bg-[#333] px-4 py-2 rounded-xl text-sm active:opacity-70"
+          className="text-white bg-[#2a2a2a] px-5 h-11 rounded-xl text-sm active:opacity-70 font-medium"
         >
           ✕ 閉じる
         </button>
+        {/* Slide counter – top right */}
+        <div className="bg-black/60 px-3 py-1.5 rounded-full">
+          <span className="text-[#ff7a1a] font-bold text-sm tabular-nums">
+            {currentSlide + 1}
+          </span>
+          <span className="text-[#666] text-sm"> / {slides.length}</span>
+        </div>
       </div>
+
+      {/* Canvas */}
       <div className="flex-1 flex items-center justify-center overflow-hidden p-2">
         <canvas
           ref={canvasRef}

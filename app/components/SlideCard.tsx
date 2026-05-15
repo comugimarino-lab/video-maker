@@ -23,7 +23,7 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.45 : 1,
   };
 
   function handleThumbnailClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -50,30 +50,28 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      className="bg-[#1a1a1a] rounded-2xl overflow-hidden border border-[#333] mb-4"
+      className="bg-[#141414] rounded-2xl overflow-hidden border border-[#2a2a2a] mb-4"
     >
-      {/* Header: drag handle + index */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 border-b border-[#333]"
-      >
+      {/* Header row */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-[#2a2a2a]">
         <div
           {...attributes}
           {...listeners}
-          className="drag-handle text-[#888] text-2xl select-none px-1"
+          className="drag-handle text-[#555] text-2xl select-none px-1 touch-none"
           aria-label="ドラッグして並び替え"
         >
           ⠿
         </div>
-        <span className="text-[#f97316] font-bold text-lg">#{index + 1}</span>
+        <span className="text-[#ff7a1a] font-bold text-lg">#{index + 1}</span>
         <button
           onClick={() => onDelete(slide.id)}
-          className="ml-auto bg-[#2d0000] text-red-400 text-sm px-3 py-1.5 rounded-xl border border-red-900 active:opacity-70"
+          className="ml-auto bg-[#2d0000] text-red-400 text-sm px-4 h-10 rounded-xl border border-red-900/60 active:opacity-70 min-w-[80px]"
         >
-          この素材を削除
+          削除
         </button>
       </div>
 
-      {/* Thumbnail with tap overlay */}
+      {/* Thumbnail */}
       <div
         className="relative cursor-crosshair select-none mx-4 mt-4 rounded-xl overflow-hidden"
         style={{ aspectRatio: "9/16" }}
@@ -88,7 +86,7 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
           draggable={false}
         />
 
-        {/* ring indicator */}
+        {/* Ring animation on click */}
         {ringPos && (
           <div
             key={ringKey}
@@ -102,7 +100,7 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
           />
         )}
 
-        {/* existing tap marker dot */}
+        {/* Tap position dot */}
         {slide.tapPoint && (
           <div
             className="absolute pointer-events-none w-4 h-4 rounded-full border-2 border-yellow-400 bg-yellow-400/30"
@@ -113,33 +111,33 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
           />
         )}
 
-        <div className="absolute inset-0 flex items-end justify-center pb-2">
+        <div className="absolute inset-0 flex items-end justify-center pb-2 pointer-events-none">
           <span className="text-white/40 text-xs bg-black/40 px-2 py-0.5 rounded-full">
             タップで位置を設定
           </span>
         </div>
       </div>
 
-      {/* Quick buttons */}
+      {/* Quick position buttons */}
       <div className="flex gap-2 mx-4 mt-3">
         <button
           onClick={setCenter}
-          className="flex-1 text-xs bg-[#262626] text-[#f97316] border border-[#f97316]/40 py-2 rounded-xl active:opacity-70"
+          className="flex-1 text-sm bg-[#1e1e1e] text-[#ff7a1a] border border-[#ff7a1a]/40 h-12 rounded-xl active:opacity-70"
         >
           中央をタップ位置に
         </button>
         <button
           onClick={setFullAuto}
-          className="flex-1 text-xs bg-[#262626] text-[#aaa] border border-[#444] py-2 rounded-xl active:opacity-70"
+          className="flex-1 text-sm bg-[#1e1e1e] text-[#aaa] border border-[#333] h-12 rounded-xl active:opacity-70"
         >
           全画面自動配置
         </button>
       </div>
 
-      {/* Inputs */}
-      <div className="px-4 pb-4 mt-4 space-y-3">
+      {/* Input fields */}
+      <div className="px-4 pb-4 mt-4 space-y-4">
         <div>
-          <label className="text-xs text-[#888] mb-1 block">
+          <label className="text-xs text-[#666] mb-1.5 block">
             テロップ（画面下部に表示）
           </label>
           <input
@@ -147,11 +145,11 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
             value={slide.caption}
             onChange={(e) => onChange(slide.id, { caption: e.target.value })}
             placeholder="字幕テキストを入力…"
-            className="w-full bg-[#262626] border border-[#444] text-white rounded-xl px-4 py-3 text-sm placeholder-[#555] focus:outline-none focus:border-[#f97316]"
+            className="w-full bg-[#1e1e1e] border border-[#333] text-white rounded-xl px-4 h-12 text-sm placeholder-[#444] focus:outline-none focus:border-[#ff7a1a]"
           />
         </div>
         <div>
-          <label className="text-xs text-[#888] mb-1 block">
+          <label className="text-xs text-[#666] mb-1.5 block">
             ポップアップ文字（タップ位置の近くに表示）
           </label>
           <input
@@ -159,12 +157,12 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
             value={slide.popupText}
             onChange={(e) => onChange(slide.id, { popupText: e.target.value })}
             placeholder="例: ここをタップ！"
-            className="w-full bg-[#262626] border border-[#444] text-white rounded-xl px-4 py-3 text-sm placeholder-[#555] focus:outline-none focus:border-[#f97316]"
+            className="w-full bg-[#1e1e1e] border border-[#333] text-white rounded-xl px-4 h-12 text-sm placeholder-[#444] focus:outline-none focus:border-[#ff7a1a]"
           />
         </div>
         <div>
-          <label className="text-xs text-[#888] mb-1 block">
-            表示秒数
+          <label className="text-xs text-[#666] mb-1.5 block">
+            表示秒数（1〜10秒）
           </label>
           <div className="flex items-center gap-3">
             <input
@@ -176,10 +174,10 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
               onChange={(e) =>
                 onChange(slide.id, { duration: Number(e.target.value) })
               }
-              className="flex-1 accent-[#f97316]"
+              className="flex-1 accent-[#ff7a1a] h-2"
             />
-            <span className="text-[#f97316] font-bold w-12 text-right">
-              {slide.duration}s
+            <span className="text-[#ff7a1a] font-bold w-14 text-right tabular-nums">
+              {slide.duration}秒
             </span>
           </div>
         </div>
