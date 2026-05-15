@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -16,10 +16,12 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { Slide } from "./lib/types";
-import { exportVideo, supportsMediaRecorder } from "./lib/renderer";
+import { AspectRatio, Slide } from "./lib/types";
+import { exportVideo, RenderOpts, supportsMediaRecorder } from "./lib/renderer";
 import SlideCard from "./components/SlideCard";
 import PreviewModal from "./components/PreviewModal";
+
+const LS_KEY = "svm-aspect-ratio";
 
 function genId() {
   return Math.random().toString(36).slice(2, 10);
@@ -34,13 +36,35 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+function loadAspectRatio(): AspectRatio {
+  if (typeof window === "undefined") return "9:16";
+  const saved = localStorage.getItem(LS_KEY);
+  return saved === "16:9" ? "16:9" : "9:16";
+}
+
 export default function Home() {
   const [slides, setSlides] = useState<Slide[]>([]);
+  const [aspectRatio, setAspectRatioState] = useState<AspectRatio>("9:16");
   const [previewing, setPreviewing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportLabel, setExportLabel] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Restore from localStorage after hydration
+  useEffect(() => {
+    setAspectRatioState(loadAspectRatio());
+  }, []);
+
+  function setAspectRatio(ar: AspectRatio) {
+    setAspectRatioState(ar);
+    localStorage.setItem(LS_KEY, ar);
+  }
+
+  const renderOpts = useMemo<RenderOpts>(
+    () => ({ aspectRatio, reelMode: false }),
+    [aspectRatio]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -58,6 +82,7 @@ export default function Home() {
         caption: "",
         popupText: "",
         duration: 3,
+        transition: "none" as const,
       }))
     );
     setSlides((prev) => [...prev, ...newSlides]);
@@ -92,12 +117,10 @@ export default function Home() {
       let filename: string;
 
       if (supportsMediaRecorder()) {
-        // Chrome / Android Safari – WebM via MediaRecorder
         setExportLabel("WebM を書き出し中…");
-        blob = await exportVideo(slides, (pct) => setExportProgress(pct));
+        blob = await exportVideo(slides, (pct) => setExportProgress(pct), renderOpts);
         filename = "output.webm";
       } else {
-        // iOS Safari fallback – MP4 via ffmpeg.wasm
         const { exportVideoFfmpeg } = await import("./lib/ffmpeg-export");
         blob = await exportVideoFfmpeg(slides, (pct, label) => {
           setExportProgress(pct);
@@ -124,13 +147,29 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0a0a0a] max-w-lg mx-auto">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-b border-[#222] px-4 py-4">
-        <h1 className="text-[#ff7a1a] font-bold text-xl leading-tight">
-          📱 スクショ動画メーカー
-        </h1>
-        <p className="text-[#666] text-xs mt-0.5">
-          スクリーンショットから解説動画を作成
-        </p>
+      <header className="sticky top-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-b border-[#222] px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-[#ff7a1a] font-bold text-xl leading-tight">
+            📱 スクショ動画メーカー
+          </h1>
+        </div>
+
+        {/* Aspect ratio toggle */}
+        <div className="flex gap-1.5 bg-[#141414] p-1 rounded-xl border border-[#2a2a2a]">
+          {(["9:16", "16:9"] as AspectRatio[]).map((ar) => (
+            <button
+              key={ar}
+              onClick={() => setAspectRatio(ar)}
+              className={`flex-1 h-9 rounded-lg text-sm font-semibold transition-colors ${
+                aspectRatio === ar
+                  ? "bg-[#ff7a1a] text-black"
+                  : "text-[#666] active:text-white"
+              }`}
+            >
+              {ar === "9:16" ? "縦 9:16（リール）" : "横 16:9"}
+            </button>
+          ))}
+        </div>
       </header>
 
       <main className="flex-1 px-4 pb-40 pt-4">
@@ -140,12 +179,8 @@ export default function Home() {
           onClick={() => fileInputRef.current?.click()}
         >
           <div className="text-5xl mb-3">📸</div>
-          <p className="text-white font-semibold text-lg mb-1">
-            画像を追加
-          </p>
-          <p className="text-[#666] text-sm">
-            タップして選択、または複数まとめて追加
-          </p>
+          <p className="text-white font-semibold text-lg mb-1">画像を追加</p>
+          <p className="text-[#666] text-sm">タップして選択、または複数まとめて追加</p>
           <input
             ref={fileInputRef}
             type="file"
@@ -187,6 +222,7 @@ export default function Home() {
                 key={slide.id}
                 slide={slide}
                 index={i}
+                aspectRatio={aspectRatio}
                 onChange={updateSlide}
                 onDelete={deleteSlide}
               />
@@ -205,7 +241,6 @@ export default function Home() {
       {/* Bottom action bar */}
       {slides.length > 0 && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-[#0a0a0a]/95 backdrop-blur border-t border-[#222] px-4 py-4 z-40">
-          {/* Progress bar */}
           {exporting && (
             <div className="mb-3">
               <div className="flex justify-between text-xs text-[#888] mb-1.5">
@@ -220,7 +255,6 @@ export default function Home() {
               </div>
             </div>
           )}
-
           <div className="flex gap-3">
             <button
               onClick={() => setPreviewing(true)}
@@ -240,9 +274,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Preview modal */}
       {previewing && (
-        <PreviewModal slides={slides} onClose={() => setPreviewing(false)} />
+        <PreviewModal
+          slides={slides}
+          opts={renderOpts}
+          onClose={() => setPreviewing(false)}
+        />
       )}
     </div>
   );

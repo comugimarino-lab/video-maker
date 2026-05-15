@@ -1,8 +1,25 @@
-import { Slide } from "./types";
+import { AspectRatio, Slide } from "./types";
 
-const VIDEO_W = 1080;
-const VIDEO_H = 1920;
 const FPS = 30;
+const TRANS_DUR = 0.4;
+
+// ─── dimension helpers ────────────────────────────────────────────────────
+
+export function getDims(ar: AspectRatio): { W: number; H: number } {
+  return ar === "9:16" ? { W: 720, H: 1280 } : { W: 1280, H: 720 };
+}
+
+// Proportional sizing unit: shorter edge (720 for both ratios)
+function unit(W: number, H: number) {
+  return Math.min(W, H);
+}
+
+export interface RenderOpts {
+  aspectRatio?: AspectRatio;
+  reelMode?: boolean;
+}
+
+// ─── public helpers ───────────────────────────────────────────────────────
 
 export function supportsMediaRecorder(): boolean {
   if (typeof MediaRecorder === "undefined") return false;
@@ -22,95 +39,159 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-function drawSlideFrame(
+// ─── drawing primitives ───────────────────────────────────────────────────
+
+function drawBg(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
-  slide: Slide,
-  elapsed: number // seconds into this slide
+  W: number,
+  H: number,
+  contain: boolean
 ) {
-  const W = VIDEO_W;
-  const H = VIDEO_H;
-
-  // Black bg
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, W, H);
-
-  // Fit image (cover) centered
-  const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+  // contain = fit fully visible (may have black bars)
+  // cover  = fill frame (may crop)
+  const scale = contain
+    ? Math.min(W / img.naturalWidth, H / img.naturalHeight)
+    : Math.max(W / img.naturalWidth, H / img.naturalHeight);
   const dw = img.naturalWidth * scale;
   const dh = img.naturalHeight * scale;
-  const dx = (W - dw) / 2;
-  const dy = (H - dh) / 2;
-  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+}
 
-  // Tap ring animation (plays from t=0.1 to t=0.1+1s)
-  if (slide.tapPoint) {
-    const px = slide.tapPoint.x * W;
-    const py = slide.tapPoint.y * H;
-    const animStart = 0.1;
-    const animDur = 1.0;
-    const t = elapsed - animStart;
-    if (t >= 0 && t <= animDur) {
-      const progress = t / animDur;
-      // ring expands then contracts
-      const scale2 = progress < 0.6
-        ? 0.5 + (progress / 0.6) * 1.3
-        : 1.8 - ((progress - 0.6) / 0.4) * 1.3;
-      const alpha = progress < 0.6 ? 1 : 1 - ((progress - 0.6) / 0.4) * 0.4;
-      const radius = 40 * scale2;
-      ctx.beginPath();
-      ctx.arc(px, py, radius, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 220, 0, ${alpha})`;
-      ctx.lineWidth = 6;
-      ctx.stroke();
-    }
-  }
+function drawTapRing(
+  ctx: CanvasRenderingContext2D,
+  slide: Slide,
+  elapsed: number,
+  W: number,
+  H: number
+) {
+  if (!slide.tapPoint) return;
+  const px = slide.tapPoint.x * W;
+  const py = slide.tapPoint.y * H;
+  const t = elapsed - 0.1;
+  if (t < 0 || t > 1.0) return;
+  const p = t;
+  const s = p < 0.6 ? 0.5 + (p / 0.6) * 1.3 : 1.8 - ((p - 0.6) / 0.4) * 1.3;
+  const a = p < 0.6 ? 1 : 1 - ((p - 0.6) / 0.4) * 0.4;
+  const r = unit(W, H) * 0.056; // ~40px on 720-unit canvas
+  ctx.beginPath();
+  ctx.arc(px, py, r * s, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(255,220,0,${a})`;
+  ctx.lineWidth = unit(W, H) * 0.008;
+  ctx.stroke();
+}
 
-  // Popup text near tap point
-  if (slide.tapPoint && slide.popupText && elapsed > 0.15) {
-    const px = slide.tapPoint.x * W;
-    const py = slide.tapPoint.y * H;
-    const fontSize = 42;
-    ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
-    const metrics = ctx.measureText(slide.popupText);
-    const tw = metrics.width;
-    const th = fontSize + 16;
-    const margin = 20;
+function drawPopup(
+  ctx: CanvasRenderingContext2D,
+  slide: Slide,
+  elapsed: number,
+  W: number,
+  H: number
+) {
+  if (!slide.tapPoint || !slide.popupText || elapsed <= 0.15) return;
+  const px = slide.tapPoint.x * W;
+  const py = slide.tapPoint.y * H;
+  const u = unit(W, H);
+  const fs = Math.round(u * 0.058); // ~42px
+  const pad = Math.round(u * 0.022); // ~16px
+  ctx.font = `bold ${fs}px sans-serif`;
+  const tw = ctx.measureText(slide.popupText).width;
+  const th = fs + pad;
+  const m = Math.round(u * 0.028);
+  let bx = px - tw / 2 - pad;
+  let by = py - u * 0.11 - th;
+  if (bx < m) bx = m;
+  if (bx + tw + pad * 2 > W - m) bx = W - tw - pad * 2 - m;
+  if (by < m) by = py + u * 0.083;
+  ctx.fillStyle = "rgba(255,220,0,0.92)";
+  roundRect(ctx, bx, by, tw + pad * 2, th, Math.round(u * 0.019));
+  ctx.fill();
+  ctx.fillStyle = "#000";
+  ctx.fillText(slide.popupText, bx + pad, by + fs + 2);
+}
 
-    let bx = px - tw / 2 - 16;
-    let by = py - 80 - th;
-    if (bx < margin) bx = margin;
-    if (bx + tw + 32 > W - margin) bx = W - tw - 32 - margin;
-    if (by < margin) by = py + 60;
+function drawNormalCaption(
+  ctx: CanvasRenderingContext2D,
+  slide: Slide,
+  W: number,
+  H: number
+) {
+  if (!slide.caption) return;
+  const u = unit(W, H);
+  // 9:16: slightly larger captions as specced
+  const fs = Math.round(u * (H > W ? 0.062 : 0.048));
+  const capH = Math.round(fs * 2.4);
+  ctx.fillStyle = "rgba(0,0,0,0.75)";
+  ctx.fillRect(0, H - capH, W, capH);
+  ctx.fillStyle = "#fff";
+  ctx.font = `bold ${fs}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.fillText(slide.caption, W / 2, H - capH + fs + Math.round(capH * 0.18));
+  ctx.textAlign = "left";
+}
 
-    ctx.fillStyle = "rgba(255,220,0,0.92)";
-    roundRect(ctx, bx, by, tw + 32, th, 14);
+function drawReelCaption(
+  ctx: CanvasRenderingContext2D,
+  slide: Slide,
+  W: number,
+  H: number
+) {
+  if (!slide.caption) return;
+  const fs = Math.round(unit(W, H) * 0.086); // ~62px
+  ctx.font = `bold ${fs}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 3;
+  ctx.fillStyle = "#fff";
+  ctx.fillText(slide.caption, W / 2, H - Math.round(H * 0.083));
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.textAlign = "left";
+}
+
+function drawStoryBar(
+  ctx: CanvasRenderingContext2D,
+  slides: Slide[],
+  globalTime: number,
+  W: number,
+  H: number
+) {
+  const BAR_H = 4;
+  const TOP = Math.round(H * 0.018);
+  const MX = Math.round(W * 0.022);
+  const GAP = Math.round(W * 0.006);
+  const n = slides.length;
+  const barW = (W - MX * 2 - GAP * (n - 1)) / n;
+
+  let acc = 0;
+  for (let i = 0; i < n; i++) {
+    const x = MX + i * (barW + GAP);
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath();
+    ctx.roundRect(x, TOP, barW, BAR_H, BAR_H / 2);
     ctx.fill();
-
-    ctx.fillStyle = "#000";
-    ctx.fillText(slide.popupText, bx + 16, by + fontSize + 4);
-  }
-
-  // Caption bar
-  if (slide.caption) {
-    const capH = 110;
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.fillRect(0, H - capH, W, capH);
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 44px -apple-system, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(slide.caption, W / 2, H - capH + 68);
-    ctx.textAlign = "left";
+    if (globalTime >= acc + slides[i].duration) {
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.roundRect(x, TOP, barW, BAR_H, BAR_H / 2);
+      ctx.fill();
+    } else if (globalTime >= acc) {
+      const pct = (globalTime - acc) / slides[i].duration;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.roundRect(x, TOP, barW * pct, BAR_H, BAR_H / 2);
+      ctx.fill();
+    }
+    acc += slides[i].duration;
   }
 }
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
+  x: number, y: number, w: number, h: number, r: number
 ) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -125,63 +206,159 @@ function roundRect(
   ctx.closePath();
 }
 
+// ─── composite draw ───────────────────────────────────────────────────────
+
+function drawNormalSlide(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  slide: Slide,
+  elapsed: number,
+  W: number,
+  H: number,
+  contain: boolean
+) {
+  drawBg(ctx, img, W, H, contain);
+  drawTapRing(ctx, slide, elapsed, W, H);
+  drawPopup(ctx, slide, elapsed, W, H);
+  drawNormalCaption(ctx, slide, W, H);
+}
+
+function drawReelFrame(
+  ctx: CanvasRenderingContext2D,
+  images: HTMLImageElement[],
+  slides: Slide[],
+  globalTime: number,
+  W: number,
+  H: number,
+  contain: boolean
+) {
+  let acc = 0;
+  let idx = slides.length - 1;
+  let elapsed = globalTime;
+  for (let i = 0; i < slides.length; i++) {
+    if (globalTime < acc + slides[i].duration) {
+      idx = i;
+      elapsed = globalTime - acc;
+      break;
+    }
+    acc += slides[i].duration;
+  }
+
+  const slide = slides[idx];
+  const nextSlide = slides[idx + 1];
+  const nextImg = images[idx + 1];
+  const transStart = slide.duration - TRANS_DUR;
+  const isTransitioning =
+    nextSlide && slide.transition !== "none" && elapsed >= transStart;
+
+  if (!isTransitioning) {
+    drawBg(ctx, images[idx], W, H, contain);
+    drawTapRing(ctx, slide, elapsed, W, H);
+    drawPopup(ctx, slide, elapsed, W, H);
+    drawReelCaption(ctx, slide, W, H);
+  } else {
+    const tp = (elapsed - transStart) / TRANS_DUR;
+    if (slide.transition === "fade") {
+      drawBg(ctx, nextImg, W, H, contain);
+      ctx.globalAlpha = 1 - tp;
+      drawBg(ctx, images[idx], W, H, contain);
+      ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1 - tp;
+      drawTapRing(ctx, slide, elapsed, W, H);
+      drawPopup(ctx, slide, elapsed, W, H);
+      drawReelCaption(ctx, slide, W, H);
+      ctx.globalAlpha = tp;
+      drawReelCaption(ctx, nextSlide, W, H);
+      ctx.globalAlpha = 1;
+    } else if (slide.transition === "slide-up") {
+      drawBg(ctx, images[idx], W, H, contain);
+      drawTapRing(ctx, slide, elapsed, W, H);
+      drawPopup(ctx, slide, elapsed, W, H);
+      drawReelCaption(ctx, slide, W, H);
+      ctx.save();
+      ctx.translate(0, H * (1 - tp));
+      drawBg(ctx, nextImg, W, H, contain);
+      drawReelCaption(ctx, nextSlide, W, H);
+      ctx.restore();
+    }
+  }
+
+  drawStoryBar(ctx, slides, globalTime, W, H);
+}
+
+// ─── time helpers ─────────────────────────────────────────────────────────
+
+function resolveSlide(
+  slides: Slide[],
+  globalTime: number
+): { idx: number; elapsed: number } {
+  let acc = 0;
+  for (let i = 0; i < slides.length; i++) {
+    if (globalTime < acc + slides[i].duration) {
+      return { idx: i, elapsed: globalTime - acc };
+    }
+    acc += slides[i].duration;
+  }
+  return { idx: slides.length - 1, elapsed: slides[slides.length - 1].duration };
+}
+
+// ─── public preview API ───────────────────────────────────────────────────
+
 export async function renderPreview(
   canvas: HTMLCanvasElement,
   slides: Slide[],
-  onSlideChange?: (idx: number) => void
+  onSlideChange?: (idx: number) => void,
+  opts: RenderOpts = {}
 ): Promise<() => void> {
-  const ctx = canvas.getContext("2d")!;
-  canvas.width = VIDEO_W;
-  canvas.height = VIDEO_H;
+  const ar = opts.aspectRatio ?? "9:16";
+  const { W, H } = getDims(ar);
+  const contain = ar === "9:16";
+  const reelMode = opts.reelMode ?? false;
 
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
   const images = await Promise.all(slides.map((s) => loadImage(s.dataUrl)));
 
   let stopped = false;
   let startTime: number | null = null;
   let frameId = 0;
-
   const totalDuration = slides.reduce((acc, s) => acc + s.duration, 0);
 
   function tick(now: number) {
     if (stopped) return;
     if (startTime === null) startTime = now;
-    const elapsed = (now - startTime) / 1000;
-    const looped = elapsed % totalDuration;
-
-    // find current slide
-    let acc = 0;
-    let slideIdx = 0;
-    let slideElapsed = 0;
-    for (let i = 0; i < slides.length; i++) {
-      if (looped < acc + slides[i].duration) {
-        slideIdx = i;
-        slideElapsed = looped - acc;
-        break;
-      }
-      acc += slides[i].duration;
+    const gt = ((now - startTime) / 1000) % totalDuration;
+    const { idx, elapsed } = resolveSlide(slides, gt);
+    onSlideChange?.(idx);
+    if (reelMode) {
+      drawReelFrame(ctx, images, slides, gt, W, H, contain);
+    } else {
+      drawNormalSlide(ctx, images[idx], slides[idx], elapsed, W, H, contain);
     }
-
-    onSlideChange?.(slideIdx);
-    drawSlideFrame(ctx, images[slideIdx], slides[slideIdx], slideElapsed);
     frameId = requestAnimationFrame(tick);
   }
 
   frameId = requestAnimationFrame(tick);
-  return () => {
-    stopped = true;
-    cancelAnimationFrame(frameId);
-  };
+  return () => { stopped = true; cancelAnimationFrame(frameId); };
 }
+
+// ─── public export API ────────────────────────────────────────────────────
 
 export async function exportVideo(
   slides: Slide[],
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  opts: RenderOpts = {}
 ): Promise<Blob> {
-  const canvas = document.createElement("canvas");
-  canvas.width = VIDEO_W;
-  canvas.height = VIDEO_H;
-  const ctx = canvas.getContext("2d")!;
+  const ar = opts.aspectRatio ?? "9:16";
+  const { W, H } = getDims(ar);
+  const contain = ar === "9:16";
+  const reelMode = opts.reelMode ?? false;
 
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
   const images = await Promise.all(slides.map((s) => loadImage(s.dataUrl)));
 
   return new Promise((resolve, reject) => {
@@ -190,39 +367,26 @@ export async function exportVideo(
       mimeType: "video/webm;codecs=vp8",
       videoBitsPerSecond: 8_000_000,
     });
-
     const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-    recorder.onstop = () => {
-      resolve(new Blob(chunks, { type: "video/webm" }));
-    };
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" }));
     recorder.onerror = reject;
-
     recorder.start(100);
 
     const totalFrames = slides.reduce((acc, s) => acc + Math.round(s.duration * FPS), 0);
+    const totalDuration = slides.reduce((acc, s) => acc + s.duration, 0);
     let frame = 0;
 
     function nextFrame() {
-      let acc = 0;
-      let slideIdx = 0;
-      let slideElapsed = 0;
-      const t = frame / FPS;
-      for (let i = 0; i < slides.length; i++) {
-        if (t < acc + slides[i].duration) {
-          slideIdx = i;
-          slideElapsed = t - acc;
-          break;
-        }
-        acc += slides[i].duration;
+      const gt = Math.min(frame / FPS, totalDuration - 1 / FPS);
+      const { idx, elapsed } = resolveSlide(slides, gt);
+      if (reelMode) {
+        drawReelFrame(ctx, images, slides, gt, W, H, contain);
+      } else {
+        drawNormalSlide(ctx, images[idx], slides[idx], elapsed, W, H, contain);
       }
-
-      drawSlideFrame(ctx, images[slideIdx], slides[slideIdx], slideElapsed);
       onProgress?.((frame / totalFrames) * 100);
       frame++;
-
       if (frame >= totalFrames) {
         setTimeout(() => recorder.stop(), 200);
       } else {

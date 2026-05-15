@@ -1,26 +1,32 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Slide } from "../lib/types";
-import { renderPreview } from "../lib/renderer";
+import { AspectRatio, Slide } from "../lib/types";
+import { RenderOpts, renderPreview } from "../lib/renderer";
 
 interface Props {
   slides: Slide[];
+  opts: RenderOpts;
   onClose: () => void;
 }
 
-export default function PreviewModal({ slides, onClose }: Props) {
+export default function PreviewModal({ slides, opts, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
     if (!canvasRef.current || slides.length === 0) return;
-    renderPreview(canvasRef.current, slides, setCurrentSlide).then((stop) => {
+    renderPreview(canvasRef.current, slides, setCurrentSlide, opts).then((stop) => {
       stopRef.current = stop;
     });
     return () => { stopRef.current?.(); };
-  }, [slides]);
+    // opts object is stable from parent (useMemo), so this is fine
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slides, opts.aspectRatio, opts.reelMode]);
+
+  const ar: AspectRatio = opts.aspectRatio ?? "9:16";
+  const arStyle = ar === "9:16" ? "9 / 16" : "16 / 9";
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
@@ -32,12 +38,12 @@ export default function PreviewModal({ slides, onClose }: Props) {
         >
           ✕ 閉じる
         </button>
-        {/* Slide counter – top right */}
-        <div className="bg-black/60 px-3 py-1.5 rounded-full">
+        <div className="bg-black/60 px-3 py-1.5 rounded-full flex items-center gap-2">
+          <span className="text-[#555] text-xs">{ar}</span>
           <span className="text-[#ff7a1a] font-bold text-sm tabular-nums">
             {currentSlide + 1}
           </span>
-          <span className="text-[#666] text-sm"> / {slides.length}</span>
+          <span className="text-[#666] text-sm">/ {slides.length}</span>
         </div>
       </div>
 
@@ -46,7 +52,7 @@ export default function PreviewModal({ slides, onClose }: Props) {
         <canvas
           ref={canvasRef}
           className="max-h-full max-w-full rounded-xl"
-          style={{ aspectRatio: "9/16" }}
+          style={{ aspectRatio: arStyle }}
         />
       </div>
     </div>

@@ -3,16 +3,17 @@
 import { useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Slide } from "../lib/types";
+import { AspectRatio, Slide } from "../lib/types";
 
 interface Props {
   slide: Slide;
   index: number;
+  aspectRatio: AspectRatio;
   onChange: (id: string, patch: Partial<Slide>) => void;
   onDelete: (id: string) => void;
 }
 
-export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
+export default function SlideCard({ slide, index, aspectRatio, onChange, onDelete }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: slide.id });
 
@@ -74,7 +75,7 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
       {/* Thumbnail */}
       <div
         className="relative cursor-crosshair select-none mx-4 mt-4 rounded-xl overflow-hidden"
-        style={{ aspectRatio: "9/16" }}
+        style={{ aspectRatio: aspectRatio === "9:16" ? "9/16" : "16/9" }}
         onClick={handleThumbnailClick}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -82,7 +83,7 @@ export default function SlideCard({ slide, index, onChange, onDelete }: Props) {
           ref={imgRef}
           src={slide.dataUrl}
           alt={`slide ${index + 1}`}
-          className="w-full h-full object-cover"
+          className={`w-full h-full ${aspectRatio === "9:16" ? "object-contain" : "object-cover"} bg-black`}
           draggable={false}
         />
 
