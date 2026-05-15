@@ -83,6 +83,9 @@ export default function Home() {
         popupText: "",
         duration: 3,
         transition: "none" as const,
+        overlayText: "",
+        overlayPosition: "center" as const,
+        overlaySize: "medium" as const,
       }))
     );
     setSlides((prev) => [...prev, ...newSlides]);

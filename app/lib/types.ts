@@ -7,6 +7,9 @@ export type TransitionType = "none" | "fade" | "slide-up";
 export type AppMode = "normal" | "reel";
 export type AspectRatio = "9:16" | "16:9";
 
+export type OverlayPosition = "top" | "center" | "bottom";
+export type OverlaySize = "small" | "medium" | "large";
+
 export interface Slide {
   id: string;
   dataUrl: string;
@@ -15,4 +18,7 @@ export interface Slide {
   popupText: string;
   duration: number;
   transition: TransitionType;
+  overlayText: string;
+  overlayPosition: OverlayPosition;
+  overlaySize: OverlaySize;
 }

@@ -1,4 +1,4 @@
-import { AspectRatio, Slide } from "./types";
+import { AspectRatio, OverlayPosition, OverlaySize, Slide } from "./types";
 
 const FPS = 30;
 const TRANS_DUR = 0.4;
@@ -112,6 +112,118 @@ function drawPopup(
   ctx.fillText(slide.popupText, bx + pad, by + fs + 2);
 }
 
+// ─── overlay text ─────────────────────────────────────────────────────────
+
+const OVERLAY_FS: Record<OverlaySize, number> = {
+  small: 0.05,
+  medium: 0.08,
+  large: 0.12,
+};
+
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number
+): string[] {
+  const result: string[] = [];
+  for (const para of text.split("\n")) {
+    if (!para) continue;
+    if (ctx.measureText(para).width <= maxW) {
+      result.push(para);
+      continue;
+    }
+    // character-by-character wrap (works for CJK and Latin)
+    let line = "";
+    for (const ch of para) {
+      const test = line + ch;
+      if (ctx.measureText(test).width <= maxW) {
+        line = test;
+      } else {
+        if (line) result.push(line);
+        line = ch;
+      }
+    }
+    if (line) result.push(line);
+  }
+  return result;
+}
+
+function drawOverlay(
+  ctx: CanvasRenderingContext2D,
+  slide: Slide,
+  elapsed: number,
+  W: number,
+  H: number
+) {
+  if (!slide.overlayText) return;
+
+  const ANIM = 0.3;
+  const progress = Math.min(elapsed / ANIM, 1); // 0→1 over 0.3 s
+
+  const u = unit(W, H);
+  const fs = Math.round(u * OVERLAY_FS[slide.overlaySize]);
+  const lineH = Math.round(fs * 1.35);
+  const padX = Math.round(u * 0.04);
+  const padY = Math.round(u * 0.025);
+  const hMx = Math.round(W * 0.06);
+  const maxTW = W - hMx * 2 - padX * 2;
+
+  ctx.font = `bold ${fs}px sans-serif`;
+  const lines = wrapText(ctx, slide.overlayText, maxTW);
+  if (lines.length === 0) return;
+
+  const boxW = Math.min(
+    lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0) + padX * 2,
+    W - hMx * 2
+  );
+  const boxH = lines.length * lineH + padY * 2;
+
+  // vertical anchor
+  const pos: OverlayPosition = slide.overlayPosition;
+  let boxY: number;
+  const slideOffset = Math.round(H * 0.016); // ~20px on 1280H
+  if (pos === "top") {
+    boxY = Math.round(H * 0.06);
+  } else if (pos === "bottom") {
+    // stay above caption bar (estimate ~10% of H)
+    boxY = Math.round(H * 0.78) - boxH;
+  } else {
+    boxY = Math.round(H / 2 - boxH / 2);
+  }
+
+  const boxX = Math.round((W - boxW) / 2);
+
+  // animation: fade + slide
+  const dy =
+    pos === "bottom" ? slideOffset * (1 - progress) :
+    pos === "top"    ? -slideOffset * (1 - progress) : 0;
+
+  ctx.save();
+  ctx.globalAlpha = progress;
+  ctx.translate(0, dy);
+
+  // semi-transparent background
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
+  roundRect(ctx, boxX, boxY, boxW, boxH, Math.round(u * 0.012));
+  ctx.fill();
+
+  // orange border
+  ctx.strokeStyle = "#ff7a1a";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // white text
+  ctx.fillStyle = "#fff";
+  ctx.font = `bold ${fs}px sans-serif`;
+  ctx.textAlign = "center";
+  lines.forEach((line, i) => {
+    ctx.fillText(line, boxX + boxW / 2, boxY + padY + fs + i * lineH);
+  });
+  ctx.textAlign = "left";
+
+  ctx.restore();
+}
+
 function drawNormalCaption(
   ctx: CanvasRenderingContext2D,
   slide: Slide,
@@ -220,6 +332,7 @@ function drawNormalSlide(
   drawBg(ctx, img, W, H, contain);
   drawTapRing(ctx, slide, elapsed, W, H);
   drawPopup(ctx, slide, elapsed, W, H);
+  drawOverlay(ctx, slide, elapsed, W, H);
   drawNormalCaption(ctx, slide, W, H);
 }
 
@@ -255,6 +368,7 @@ function drawReelFrame(
     drawBg(ctx, images[idx], W, H, contain);
     drawTapRing(ctx, slide, elapsed, W, H);
     drawPopup(ctx, slide, elapsed, W, H);
+    drawOverlay(ctx, slide, elapsed, W, H);
     drawReelCaption(ctx, slide, W, H);
   } else {
     const tp = (elapsed - transStart) / TRANS_DUR;
@@ -266,6 +380,7 @@ function drawReelFrame(
       ctx.globalAlpha = 1 - tp;
       drawTapRing(ctx, slide, elapsed, W, H);
       drawPopup(ctx, slide, elapsed, W, H);
+      drawOverlay(ctx, slide, elapsed, W, H);
       drawReelCaption(ctx, slide, W, H);
       ctx.globalAlpha = tp;
       drawReelCaption(ctx, nextSlide, W, H);
@@ -274,6 +389,7 @@ function drawReelFrame(
       drawBg(ctx, images[idx], W, H, contain);
       drawTapRing(ctx, slide, elapsed, W, H);
       drawPopup(ctx, slide, elapsed, W, H);
+      drawOverlay(ctx, slide, elapsed, W, H);
       drawReelCaption(ctx, slide, W, H);
       ctx.save();
       ctx.translate(0, H * (1 - tp));

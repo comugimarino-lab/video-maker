@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AspectRatio, Slide } from "../lib/types";
+import { AspectRatio, OverlayPosition, OverlaySize, Slide } from "../lib/types";
 
 interface Props {
   slide: Slide;
@@ -133,6 +133,73 @@ export default function SlideCard({ slide, index, aspectRatio, onChange, onDelet
         >
           全画面自動配置
         </button>
+      </div>
+
+      {/* Overlay text */}
+      <div className="px-4 mt-4 pb-1 space-y-3 border-b border-[#2a2a2a] pb-4">
+        <p className="text-xs text-[#ff7a1a] font-semibold uppercase tracking-wide">
+          テキストオーバーレイ
+        </p>
+        <div>
+          <label className="text-xs text-[#666] mb-1.5 block">
+            オーバーレイテキスト（複数行可）
+          </label>
+          <textarea
+            rows={3}
+            value={slide.overlayText}
+            onChange={(e) => onChange(slide.id, { overlayText: e.target.value })}
+            placeholder={"例: ここに説明文\n2行目も書けます"}
+            className="w-full bg-[#1e1e1e] border border-[#333] text-white rounded-xl px-4 py-3 text-sm placeholder-[#444] focus:outline-none focus:border-[#ff7a1a] resize-none"
+          />
+        </div>
+
+        {/* Position */}
+        <div>
+          <label className="text-xs text-[#666] mb-1.5 block">表示位置</label>
+          <div className="flex gap-2">
+            {(["top", "center", "bottom"] as OverlayPosition[]).map((pos) => {
+              const label = pos === "top" ? "上" : pos === "center" ? "中央" : "下";
+              const active = slide.overlayPosition === pos;
+              return (
+                <button
+                  key={pos}
+                  onClick={() => onChange(slide.id, { overlayPosition: pos })}
+                  className={`flex-1 h-10 rounded-xl text-sm font-semibold transition-colors ${
+                    active
+                      ? "bg-[#ff7a1a] text-black"
+                      : "bg-[#1e1e1e] text-[#888] border border-[#333] active:opacity-70"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Size */}
+        <div>
+          <label className="text-xs text-[#666] mb-1.5 block">文字サイズ</label>
+          <div className="flex gap-2">
+            {(["small", "medium", "large"] as OverlaySize[]).map((sz) => {
+              const label = sz === "small" ? "小" : sz === "medium" ? "中" : "大";
+              const active = slide.overlaySize === sz;
+              return (
+                <button
+                  key={sz}
+                  onClick={() => onChange(slide.id, { overlaySize: sz })}
+                  className={`flex-1 h-10 rounded-xl text-sm font-semibold transition-colors ${
+                    active
+                      ? "bg-[#ff7a1a] text-black"
+                      : "bg-[#1e1e1e] text-[#888] border border-[#333] active:opacity-70"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Input fields */}
