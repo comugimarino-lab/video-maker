@@ -32,4 +32,7 @@ export interface Slide {
   overlayText: string;
   overlayPosition: OverlayPosition;
   overlaySize: OverlaySize;
+  audio: string | null;         // dataURL of recorded/uploaded audio
+  audioDuration: number | null; // seconds
+  syncDuration: boolean;        // if true, slide duration tracks audioDuration
 }

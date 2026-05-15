@@ -437,9 +437,19 @@ export async function renderPreview(
   const ctx = canvas.getContext("2d")!;
   const images = await Promise.all(slides.map((s) => loadImage(s.dataUrl)));
 
+  // Per-slide audio elements
+  const audioEls = slides.map((s) => {
+    if (!s.audio) return null;
+    const a = new Audio(s.audio);
+    a.preload = "auto";
+    return a;
+  });
+
   let stopped = false;
   let startTime: number | null = null;
   let frameId = 0;
+  let prevIdx = -1;
+  let prevGt = -1;
   const totalDuration = slides.reduce((acc, s) => acc + s.duration, 0);
 
   function tick(now: number) {
@@ -447,12 +457,33 @@ export async function renderPreview(
     if (startTime === null) startTime = now;
     const gt = ((now - startTime) / 1000) % totalDuration;
     const idx = drawFrame(ctx, images, slides, gt, W, H, contain, gs, reelMode);
+
+    const looped = prevGt >= 0 && gt < prevGt;
+    if (idx !== prevIdx || looped) {
+      if (prevIdx >= 0 && audioEls[prevIdx]) {
+        audioEls[prevIdx]!.pause();
+        audioEls[prevIdx]!.currentTime = 0;
+      }
+      if (audioEls[idx]) {
+        audioEls[idx]!.currentTime = 0;
+        audioEls[idx]!.play().catch(() => {});
+      }
+      prevIdx = idx;
+    }
+    prevGt = gt;
+
     onSlideChange?.(idx);
     frameId = requestAnimationFrame(tick);
   }
 
   frameId = requestAnimationFrame(tick);
-  return () => { stopped = true; cancelAnimationFrame(frameId); };
+  return () => {
+    stopped = true;
+    cancelAnimationFrame(frameId);
+    audioEls.forEach((a) => {
+      if (a) { a.pause(); a.src = ""; }
+    });
+  };
 }
 
 // ─── public export API ────────────────────────────────────────────────────
@@ -474,23 +505,73 @@ export async function exportVideo(
   const ctx = canvas.getContext("2d")!;
   const images = await Promise.all(slides.map((s) => loadImage(s.dataUrl)));
 
+  // Prepare AudioContext + decode all audio buffers before starting MediaRecorder
+  const hasAudio = slides.some((s) => s.audio);
+  let audioCtx: AudioContext | null = null;
+  let audioDestNode: MediaStreamAudioDestinationNode | null = null;
+  const audioBuffers: (AudioBuffer | null)[] = [];
+
+  if (hasAudio) {
+    audioCtx = new AudioContext();
+    audioDestNode = audioCtx.createMediaStreamDestination();
+    for (const slide of slides) {
+      if (slide.audio) {
+        try {
+          const ab = await fetch(slide.audio).then((r) => r.arrayBuffer());
+          audioBuffers.push(await audioCtx.decodeAudioData(ab));
+        } catch {
+          audioBuffers.push(null);
+        }
+      } else {
+        audioBuffers.push(null);
+      }
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const stream = canvas.captureStream(FPS);
+    if (audioDestNode) {
+      for (const track of audioDestNode.stream.getAudioTracks()) {
+        stream.addTrack(track);
+      }
+    }
+
     const recorder = new MediaRecorder(stream, {
       mimeType: "video/webm;codecs=vp8",
       videoBitsPerSecond: 8_000_000,
     });
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" }));
+    recorder.onstop = () => {
+      audioCtx?.close();
+      resolve(new Blob(chunks, { type: "video/webm" }));
+    };
     recorder.onerror = reject;
     recorder.start(100);
 
     const totalFrames = slides.reduce((acc, s) => acc + Math.round(s.duration * FPS), 0);
     const totalDuration = slides.reduce((acc, s) => acc + s.duration, 0);
     let frame = 0;
+    let audioScheduled = false;
 
     function nextFrame() {
+      // Schedule all audio clips on the first frame so timing aligns with video start
+      if (!audioScheduled && audioCtx && audioDestNode) {
+        audioScheduled = true;
+        const now = audioCtx.currentTime;
+        let t = 0;
+        for (let i = 0; i < slides.length; i++) {
+          if (audioBuffers[i]) {
+            const src = audioCtx.createBufferSource();
+            src.buffer = audioBuffers[i]!;
+            src.connect(audioDestNode);
+            src.start(now + t);
+            src.stop(now + t + slides[i].duration);
+          }
+          t += slides[i].duration;
+        }
+      }
+
       const gt = Math.min(frame / FPS, totalDuration - 1 / FPS);
       drawFrame(ctx, images, slides, gt, W, H, contain, gs, reelMode);
       onProgress?.((frame / totalFrames) * 100);

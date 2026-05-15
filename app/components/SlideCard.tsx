@@ -1,9 +1,24 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AspectRatio, OverlayPosition, OverlaySize, Slide, SlideTransitionOverride } from "../lib/types";
+
+function formatTime(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 interface Props {
   slide: Slide;
@@ -20,6 +35,106 @@ export default function SlideCard({ slide, index, aspectRatio, onChange, onDelet
   const [ringPos, setRingPos] = useState<{ x: number; y: number } | null>(null);
   const [ringKey, setRingKey] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
+
+  // Narration recording state
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startMsRef = useRef<number>(0);
+  const playbackRef = useRef<HTMLAudioElement | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (timerRef.current) clearInterval(timerRef.current);
+      playbackRef.current?.pause();
+    };
+  }, []);
+
+  async function startRecording() {
+    setRecordError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "";
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        const dur = (Date.now() - startMsRef.current) / 1000;
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+        const dataUrl = await blobToDataUrl(blob);
+        const patch: Partial<Slide> = { audio: dataUrl, audioDuration: dur };
+        if (slide.syncDuration) patch.duration = Math.max(1, dur);
+        onChange(slide.id, patch);
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      startMsRef.current = Date.now();
+      setElapsed(0);
+      setRecording(true);
+      timerRef.current = setInterval(() => {
+        setElapsed(Math.round((Date.now() - startMsRef.current) / 1000));
+      }, 500);
+    } catch {
+      setRecordError("マイクへのアクセスが許可されていません");
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+    mediaRecorderRef.current = null;
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setRecording(false);
+  }
+
+  async function handleAudioFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await blobToDataUrl(file);
+    const dur = await new Promise<number>((resolve) => {
+      const a = new Audio(dataUrl);
+      a.onloadedmetadata = () => resolve(isFinite(a.duration) ? a.duration : 0);
+      a.onerror = () => resolve(0);
+    });
+    const patch: Partial<Slide> = { audio: dataUrl, audioDuration: dur || null };
+    if (slide.syncDuration && dur > 0) patch.duration = Math.max(1, dur);
+    onChange(slide.id, patch);
+    e.target.value = "";
+  }
+
+  function discardAudio() {
+    stopPlayback();
+    onChange(slide.id, { audio: null, audioDuration: null });
+  }
+
+  function startPlayback() {
+    if (!slide.audio) return;
+    const a = new Audio(slide.audio);
+    a.onended = () => setPlaying(false);
+    a.play().catch(() => {});
+    playbackRef.current = a;
+    setPlaying(true);
+  }
+
+  function stopPlayback() {
+    playbackRef.current?.pause();
+    playbackRef.current = null;
+    setPlaying(false);
+  }
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -133,6 +248,96 @@ export default function SlideCard({ slide, index, aspectRatio, onChange, onDelet
         >
           全画面自動配置
         </button>
+      </div>
+
+      {/* Narration */}
+      <div className="px-4 mt-4 pb-4 border-b border-[#2a2a2a]">
+        <p className="text-xs text-[#ff7a1a] font-semibold uppercase tracking-wide mb-3">
+          ナレーション
+        </p>
+
+        {slide.audio ? (
+          <div className="flex gap-2 items-center bg-[#1e1e1e] rounded-xl px-3 py-2.5">
+            <span className="text-white text-xs flex-1 min-w-0 truncate">
+              🎙 {slide.audioDuration != null ? `${slide.audioDuration.toFixed(1)}秒` : "録音済み"}
+            </span>
+            <button
+              onClick={playing ? stopPlayback : startPlayback}
+              className="h-9 px-3 rounded-xl bg-[#2a2a2a] text-[#ff7a1a] border border-[#ff7a1a]/40 text-xs font-semibold active:opacity-70 whitespace-nowrap"
+            >
+              {playing ? "■ 停止" : "▶ 試し聞き"}
+            </button>
+            <button
+              onClick={discardAudio}
+              className="h-9 px-3 rounded-xl bg-[#2d0000] text-red-400 border border-red-900/60 text-xs font-semibold active:opacity-70"
+            >
+              破棄
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <button
+                onClick={recording ? stopRecording : startRecording}
+                className={`flex-1 h-11 rounded-xl text-sm font-bold active:opacity-70 flex items-center justify-center gap-2 ${
+                  recording
+                    ? "bg-[#2a2a2a] text-white border border-[#444]"
+                    : "bg-red-700 text-white"
+                }`}
+              >
+                {recording ? (
+                  <>
+                    <span>■ 停止</span>
+                    <span className="text-red-400 font-mono tabular-nums text-xs">{formatTime(elapsed)}</span>
+                  </>
+                ) : (
+                  "🔴 録音開始"
+                )}
+              </button>
+              <button
+                onClick={() => audioFileInputRef.current?.click()}
+                disabled={recording}
+                className="h-11 px-4 rounded-xl bg-[#1e1e1e] text-[#aaa] border border-[#333] text-sm active:opacity-70 disabled:opacity-40 whitespace-nowrap"
+              >
+                ↑ ファイル
+              </button>
+            </div>
+            {recordError && (
+              <p className="text-red-400 text-xs px-1">{recordError}</p>
+            )}
+            <input
+              ref={audioFileInputRef}
+              type="file"
+              accept="audio/mp3,audio/wav,audio/m4a,audio/webm,audio/mpeg,.mp3,.wav,.m4a,.webm"
+              className="hidden"
+              onChange={handleAudioFile}
+            />
+          </div>
+        )}
+
+        {/* Sync duration toggle */}
+        <div className="flex items-center justify-between mt-3">
+          <span className="text-xs text-[#888]">音声の長さに合わせる</span>
+          <button
+            onClick={() => {
+              const newSync = !slide.syncDuration;
+              const patch: Partial<Slide> = { syncDuration: newSync };
+              if (newSync && slide.audioDuration != null) {
+                patch.duration = Math.max(1, slide.audioDuration);
+              }
+              onChange(slide.id, patch);
+            }}
+            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+              slide.syncDuration ? "bg-[#ff7a1a]" : "bg-[#333]"
+            }`}
+          >
+            <div
+              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                slide.syncDuration ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Per-slide transition override */}
@@ -252,16 +457,19 @@ export default function SlideCard({ slide, index, aspectRatio, onChange, onDelet
             <input
               type="range"
               min={1}
-              max={10}
+              max={Math.max(10, slide.duration)}
               step={0.5}
               value={slide.duration}
+              disabled={slide.syncDuration && slide.audioDuration != null}
               onChange={(e) =>
                 onChange(slide.id, { duration: Number(e.target.value) })
               }
-              className="flex-1 accent-[#ff7a1a] h-2"
+              className="flex-1 accent-[#ff7a1a] h-2 disabled:opacity-40"
             />
-            <span className="text-[#ff7a1a] font-bold w-14 text-right tabular-nums">
-              {slide.duration}秒
+            <span className={`font-bold w-14 text-right tabular-nums ${
+              slide.syncDuration && slide.audioDuration != null ? "text-[#666]" : "text-[#ff7a1a]"
+            }`}>
+              {slide.duration.toFixed(1)}秒
             </span>
           </div>
         </div>

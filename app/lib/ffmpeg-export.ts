@@ -1,4 +1,5 @@
 import { Slide } from "./types";
+import { mixSlidesAudio } from "./audio-utils";
 
 const EXPORT_FPS = 15; // lower FPS for memory efficiency on iOS
 const EXPORT_W = 720;
@@ -135,7 +136,13 @@ export async function exportVideoFfmpeg(
     wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, "application/wasm"),
   });
 
-  onProgress?.(5, "フレームを描画中…");
+  onProgress?.(5, "音声を処理中…");
+  const audioWav = await mixSlidesAudio(slides);
+  if (audioWav) {
+    await ffmpeg.writeFile("audio.wav", audioWav);
+  }
+
+  onProgress?.(10, "フレームを描画中…");
 
   const canvas = document.createElement("canvas");
   canvas.width = EXPORT_W;
@@ -170,23 +177,25 @@ export async function exportVideoFfmpeg(
     const name = `f${String(frame).padStart(6, "0")}.jpg`;
     await ffmpeg.writeFile(name, jpeg);
 
-    // 5–50% for frame rendering
-    onProgress?.(5 + Math.round((frame / totalFrames) * 45), "フレームを描画中…");
+    // 10–55% for frame rendering
+    onProgress?.(10 + Math.round((frame / totalFrames) * 45), "フレームを描画中…");
   }
 
-  onProgress?.(50, "動画をエンコード中…");
+  onProgress?.(55, "動画をエンコード中…");
 
   ffmpeg.on("progress", ({ progress }) => {
-    onProgress?.(50 + Math.round(progress * 48), "動画をエンコード中…");
+    onProgress?.(55 + Math.round(progress * 43), "動画をエンコード中…");
   });
 
   await ffmpeg.exec([
     "-framerate", String(EXPORT_FPS),
     "-i", "f%06d.jpg",
+    ...(audioWav ? ["-i", "audio.wav"] : []),
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
     "-preset", "ultrafast",
     "-movflags", "+faststart",
+    ...(audioWav ? ["-c:a", "aac", "-shortest"] : []),
     "output.mp4",
   ]);
 

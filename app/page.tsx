@@ -102,10 +102,13 @@ export default function Home() {
         caption: "",
         popupText: "",
         duration: 3,
-        transition: "none" as const,
+        transition: "global" as const,
         overlayText: "",
         overlayPosition: "center" as const,
         overlaySize: "medium" as const,
+        audio: null,
+        audioDuration: null,
+        syncDuration: true,
       }))
     );
     setSlides((prev) => [...prev, ...newSlides]);
