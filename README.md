@@ -122,6 +122,28 @@
 - **Chrome / Android**: AudioContext + MediaStreamAudioDestinationNode で音声を WebM に合成
 - **iOS Safari (ffmpeg.wasm)**: OfflineAudioContext でスライド音声を 1 本に合成後、ffmpeg で mp4 に多重化
 
+### 3.5 AI でスライドを自動生成
+
+画面上部の「✨ AIでスライドを生成」ボタンをタップすると、Claude API を使ってスライドの構成を自動生成できます。
+
+#### 事前準備: API キーの設定
+
+1. 画面右上の ⚙️ ボタンをタップして設定を開く
+2. [console.anthropic.com](https://console.anthropic.com) でAPIキーを取得
+3. 「Anthropic API キー」欄に貼り付けて「保存」をタップ
+4. モデルを選択（Haiku: 高速・低コスト / Sonnet: 高品質）
+
+> APIキーは **ブラウザの localStorage にのみ保存** され、サーバーには送信されません。Anthropic API への通信はブラウザから直接行われます。
+
+#### 生成手順
+
+1. テーマ・台本を入力（例: "スマホ写真をきれいに撮る5つのコツ"）
+2. スライド枚数を選択（3〜10枚）
+3. 口調を選択（カジュアル / 丁寧 / 熱量 / シンプル）
+4. 「✨ 生成する」をタップ
+
+生成されたスライドはプレースホルダー画像付きでリストに追加されます。各スライドのサムネイルをタップして実際の画像と差し替えてください。
+
 ### 4. プレビュー再生
 
 「▶ プレビュー」ボタンをタップすると、Canvas 上で全スライドをループ再生します。

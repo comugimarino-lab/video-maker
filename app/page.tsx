@@ -20,6 +20,8 @@ import { AspectRatio, GlobalSettings, DEFAULT_GLOBAL_SETTINGS, Slide } from "./l
 import { exportVideo, RenderOpts, supportsMediaRecorder } from "./lib/renderer";
 import SlideCard from "./components/SlideCard";
 import PreviewModal from "./components/PreviewModal";
+import SettingsModal from "./components/SettingsModal";
+import AiGenerateModal from "./components/AiGenerateModal";
 
 const LS_KEY = "svm-aspect-ratio";
 const LS_GS_KEY = "svm-global-settings";
@@ -57,6 +59,8 @@ export default function Home() {
   const [aspectRatio, setAspectRatioState] = useState<AspectRatio>("9:16");
   const [globalSettings, setGlobalSettingsState] = useState<GlobalSettings>(DEFAULT_GLOBAL_SETTINGS);
   const [previewing, setPreviewing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showAiGenerate, setShowAiGenerate] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportLabel, setExportLabel] = useState("");
@@ -132,6 +136,10 @@ export default function Home() {
     setSlides((prev) => prev.filter((s) => s.id !== id));
   }
 
+  function handleAddSlides(newSlides: Slide[]) {
+    setSlides((prev) => [...prev, ...newSlides]);
+  }
+
   async function handleExport() {
     if (slides.length === 0) return;
     setExporting(true);
@@ -178,6 +186,13 @@ export default function Home() {
           <h1 className="text-[#ff7a1a] font-bold text-xl leading-tight">
             📱 スクショ動画メーカー
           </h1>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-[#666] text-xl min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="設定"
+          >
+            ⚙️
+          </button>
         </div>
 
         {/* Aspect ratio toggle */}
@@ -230,6 +245,14 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* AI Generate button */}
+        <button
+          onClick={() => setShowAiGenerate(true)}
+          className="mt-2 w-full bg-[#1a1a1a] border border-[#ff7a1a]/40 text-[#ff7a1a] font-semibold h-10 rounded-xl text-sm active:opacity-70 transition-opacity"
+        >
+          ✨ AIでスライドを生成
+        </button>
       </header>
 
       <main className="flex-1 px-4 pb-40 pt-4">
@@ -339,6 +362,18 @@ export default function Home() {
           slides={slides}
           opts={renderOpts}
           onClose={() => setPreviewing(false)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
+
+      {showAiGenerate && (
+        <AiGenerateModal
+          onClose={() => setShowAiGenerate(false)}
+          onOpenSettings={() => setShowSettings(true)}
+          onAddSlides={handleAddSlides}
         />
       )}
     </div>
