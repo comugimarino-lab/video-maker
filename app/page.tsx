@@ -22,6 +22,7 @@ import SlideCard from "./components/SlideCard";
 import PreviewModal from "./components/PreviewModal";
 import SettingsModal from "./components/SettingsModal";
 import AiGenerateModal from "./components/AiGenerateModal";
+import GrokResearchModal from "./components/GrokResearchModal";
 
 const LS_KEY = "svm-aspect-ratio";
 const LS_GS_KEY = "svm-global-settings";
@@ -61,6 +62,8 @@ export default function Home() {
   const [previewing, setPreviewing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showAiGenerate, setShowAiGenerate] = useState(false);
+  const [showGrokResearch, setShowGrokResearch] = useState(false);
+  const [grokContext, setGrokContext] = useState<string | undefined>(undefined);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportLabel, setExportLabel] = useState("");
@@ -246,13 +249,21 @@ export default function Home() {
           )}
         </div>
 
-        {/* AI Generate button */}
-        <button
-          onClick={() => setShowAiGenerate(true)}
-          className="mt-2 w-full bg-[#1a1a1a] border border-[#ff7a1a]/40 text-[#ff7a1a] font-semibold h-10 rounded-xl text-sm active:opacity-70 transition-opacity"
-        >
-          ✨ AIでスライドを生成
-        </button>
+        {/* AI Generate / Grok buttons */}
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => setShowGrokResearch(true)}
+            className="flex-none bg-[#1a1a1a] border border-[#2a2a2a] text-[#aaa] font-semibold h-10 px-3 rounded-xl text-sm active:opacity-70 transition-opacity whitespace-nowrap"
+          >
+            🔍 Grokリサーチ
+          </button>
+          <button
+            onClick={() => setShowAiGenerate(true)}
+            className="flex-1 bg-[#1a1a1a] border border-[#ff7a1a]/40 text-[#ff7a1a] font-semibold h-10 rounded-xl text-sm active:opacity-70 transition-opacity"
+          >
+            {grokContext ? "✨ AIで生成（リサーチ反映済）" : "✨ AIでスライドを生成"}
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 px-4 pb-40 pt-4">
@@ -374,6 +385,18 @@ export default function Home() {
           onClose={() => setShowAiGenerate(false)}
           onOpenSettings={() => setShowSettings(true)}
           onAddSlides={handleAddSlides}
+          grokContext={grokContext}
+        />
+      )}
+
+      {showGrokResearch && (
+        <GrokResearchModal
+          onClose={() => setShowGrokResearch(false)}
+          onOpenSettings={() => setShowSettings(true)}
+          onUseResearch={(ctx) => {
+            setGrokContext(ctx);
+            setShowAiGenerate(true);
+          }}
         />
       )}
     </div>

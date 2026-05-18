@@ -81,9 +81,10 @@ interface Props {
   onClose: () => void;
   onOpenSettings: () => void;
   onAddSlides: (slides: Slide[]) => void;
+  grokContext?: string;
 }
 
-export default function AiGenerateModal({ onClose, onOpenSettings, onAddSlides }: Props) {
+export default function AiGenerateModal({ onClose, onOpenSettings, onAddSlides, grokContext }: Props) {
   const [theme, setTheme] = useState("");
   const [count, setCount] = useState(5);
   const [tone, setTone] = useState<Tone>("カジュアル");
@@ -130,7 +131,9 @@ export default function AiGenerateModal({ onClose, onOpenSettings, onAddSlides }
 口調: ${toneDesc[tone]}
 スライド枚数: ${count}枚`;
 
-    const userMessage = `以下のテーマ・台本をもとに${count}枚のスライドを生成してください:\n\n${theme}`;
+    const userMessage = grokContext
+      ? `以下のGrokリサーチ結果とテーマをもとに${count}枚のスライドを生成してください:\n\n${grokContext}\n\n---\n\nテーマ・台本:\n${theme}`
+      : `以下のテーマ・台本をもとに${count}枚のスライドを生成してください:\n\n${theme}`;
 
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -217,6 +220,14 @@ export default function AiGenerateModal({ onClose, onOpenSettings, onAddSlides }
             ×
           </button>
         </div>
+
+        {/* Grok context badge */}
+        {grokContext && (
+          <div className="flex items-center gap-2 bg-[#ff7a1a]/10 border border-[#ff7a1a]/30 rounded-xl px-3 py-2">
+            <span className="text-[#ff7a1a] text-sm">🔍</span>
+            <p className="text-[#ff7a1a] text-xs font-semibold flex-1">Grokリサーチ結果を反映中</p>
+          </div>
+        )}
 
         {/* Theme */}
         <div className="space-y-2">

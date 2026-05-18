@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 const LS_API_KEY = "svm-api-key";
 const LS_MODEL = "svm-model";
+const LS_GROK_KEY = "svm-grok-key";
 
 export const AI_MODELS = [
   { id: "claude-haiku-4-5", label: "Haiku 4.5（高速・低コスト）" },
@@ -15,6 +16,11 @@ export type AiModelId = (typeof AI_MODELS)[number]["id"];
 export function loadApiKey(): string {
   if (typeof window === "undefined") return "";
   return localStorage.getItem(LS_API_KEY) ?? "";
+}
+
+export function loadGrokKey(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(LS_GROK_KEY) ?? "";
 }
 
 export function loadModel(): AiModelId {
@@ -29,18 +35,22 @@ interface Props {
 
 export default function SettingsModal({ onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
+  const [grokKey, setGrokKey] = useState("");
   const [model, setModel] = useState<AiModelId>("claude-haiku-4-5");
   const [showKey, setShowKey] = useState(false);
+  const [showGrokKey, setShowGrokKey] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setApiKey(loadApiKey());
+    setGrokKey(loadGrokKey());
     setModel(loadModel());
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
   function handleSave() {
     localStorage.setItem(LS_API_KEY, apiKey.trim());
+    localStorage.setItem(LS_GROK_KEY, grokKey.trim());
     localStorage.setItem(LS_MODEL, model);
     onClose();
   }
@@ -84,6 +94,31 @@ export default function SettingsModal({ onClose }: Props) {
           </div>
           <p className="text-[#555] text-xs leading-snug">
             APIキーはこのブラウザの localStorage にのみ保存され、サーバーには送信されません。
+          </p>
+        </div>
+
+        {/* Grok API Key */}
+        <div className="space-y-2">
+          <label className="text-[#aaa] text-sm font-semibold block">
+            xAI Grok API キー（リサーチ機能）
+          </label>
+          <div className="flex gap-2">
+            <input
+              type={showGrokKey ? "text" : "password"}
+              value={grokKey}
+              onChange={(e) => setGrokKey(e.target.value)}
+              placeholder="xai-..."
+              className="flex-1 bg-[#1a1a1a] border border-[#333] text-white text-sm rounded-xl h-11 px-3 focus:outline-none focus:border-[#ff7a1a] font-mono"
+            />
+            <button
+              onClick={() => setShowGrokKey((v) => !v)}
+              className="bg-[#1a1a1a] border border-[#333] text-[#888] text-sm rounded-xl h-11 px-3 min-w-[44px]"
+            >
+              {showGrokKey ? "隠す" : "表示"}
+            </button>
+          </div>
+          <p className="text-[#555] text-xs leading-snug">
+            Grokでトレンド・競合・悩みをリサーチするのに使います（省略可）。
           </p>
         </div>
 
